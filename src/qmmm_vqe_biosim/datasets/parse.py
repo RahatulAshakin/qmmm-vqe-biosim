@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from qmmm_vqe_biosim.datasets.mme55 import parse_mme55_structures
 from qmmm_vqe_biosim.datasets.mor41 import parse_mor41_structures
 from qmmm_vqe_biosim.datasets.rost61 import parse_rost61_structures
 from qmmm_vqe_biosim.paths import ensure_project_dirs
@@ -29,6 +30,11 @@ def parse_dataset(name: str, force: bool = False, limit: int | None = None) -> P
         if out_path.exists() and not force:
             return out_path
         return parse_rost61_structures(raw_dir=raw_dir, out_path=out_path, limit=limit)
+    if dataset == "mme55":
+        out_path = out_dir / "structures.jsonl"
+        if out_path.exists() and not force:
+            return out_path
+        return parse_mme55_structures(raw_dir=raw_dir, out_path=out_path, limit=limit)
 
     raise NotImplementedError(f"Parser not implemented yet for dataset: {dataset}")
 
