@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from qmmm_vqe_biosim.paths import ensure_project_dirs
 from qmmm_vqe_biosim.datasets.mor41 import parse_mor41_structures
+from qmmm_vqe_biosim.paths import ensure_project_dirs
 
 
 def parse_dataset(name: str, force: bool = False, limit: int | None = None) -> Path:

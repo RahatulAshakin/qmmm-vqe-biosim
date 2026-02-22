@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
-from qmmm_vqe_biosim.paths import repo_root
 from qmmm_vqe_biosim.datasets.schema import GeometryRecord, write_jsonl
 from qmmm_vqe_biosim.datasets.xyz import read_xyz
+from qmmm_vqe_biosim.paths import repo_root
 
 
 def iter_mor41_xyz_files(raw_dir: Path) -> list[Path]:
