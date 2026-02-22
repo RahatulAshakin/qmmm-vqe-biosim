@@ -35,13 +35,16 @@ def download_url(url: str, dest: Path, force: bool = False) -> Path:
     total = int(r.headers.get("content-length", 0)) or None
     tmp = dest.with_suffix(dest.suffix + ".part")
 
-    with tmp.open("wb") as f, tqdm(
-        total=total,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-        desc=dest.name,
-    ) as pbar:
+    with (
+        tmp.open("wb") as f,
+        tqdm(
+            total=total,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=dest.name,
+        ) as pbar,
+    ):
         for chunk in r.iter_content(chunk_size=1024 * 1024):
             if not chunk:
                 continue
@@ -142,8 +145,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="qmmm-vqe-biosim.datasets.download")
     parser.add_argument("--list", action="store_true", help="List available datasets and exit")
     parser.add_argument("--dataset", type=str, help="Dataset name to download")
-    parser.add_argument("--all", action="store_true", help="Download all datasets (excluding large ones by default)")
-    parser.add_argument("--include-large", action="store_true", help="Include large datasets (e.g., tmqm) in --all")
+    parser.add_argument(
+        "--all", action="store_true", help="Download all datasets (excluding large ones by default)"
+    )
+    parser.add_argument(
+        "--include-large", action="store_true", help="Include large datasets (e.g., tmqm) in --all"
+    )
     parser.add_argument("--force", action="store_true", help="Re-download / re-extract / re-clone")
     args = parser.parse_args()
 
