@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Virtual envs
+.venv/
+venv/
+
+# Conda
+conda-meta/
+*.conda
+
+# Data/results (do not commit)
+data/
+results/
+*.h5
+*.hdf5
+
+# Editor/OS
+.vscode/
+.DS_Store
