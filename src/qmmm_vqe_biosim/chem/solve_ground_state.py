@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 import argparse
+from time import perf_counter
+from typing import Any
 
 from qmmm_vqe_biosim.chem.qiskit_nature_ground_state import solve_ground_state_energy
 from qmmm_vqe_biosim.datasets.io import get_structure_record
+
+
+def run_reference_ground_state(dataset: str, record: str, basis: str = "sto3g") -> dict[str, Any]:
+    geometry = get_structure_record(dataset=dataset, record_id=record)
+    start = perf_counter()
+    energy = solve_ground_state_energy(record=geometry, basis=basis)
+    runtime_sec = perf_counter() - start
+    return {
+        "dataset": dataset,
+        "record": record,
+        "basis": basis,
+        "method": "reference_ground_state",
+        "energy": energy,
+        "runtime_sec": runtime_sec,
+    }
 
 
 def main() -> None:
@@ -16,9 +33,8 @@ def main() -> None:
     parser.add_argument("--basis", default="sto3g", help="Basis set (default: sto3g)")
     args = parser.parse_args()
 
-    record = get_structure_record(dataset=args.dataset, record_id=args.record)
-    energy = solve_ground_state_energy(record=record, basis=args.basis)
-    print(f"{args.dataset}:{args.record} ({args.basis}) E0 = {energy:.12f} Ha")
+    out = run_reference_ground_state(dataset=args.dataset, record=args.record, basis=args.basis)
+    print(f"{args.dataset}:{args.record} ({args.basis}) E0 = {out['energy']:.12f} Ha")
 
 
 if __name__ == "__main__":

@@ -81,6 +81,30 @@ def run_vqe_ground_state(
 
     geometry = get_structure_record(dataset=dataset, record_id=record)
     problem = build_electronic_structure_problem(record=geometry, basis=basis)
+    return run_vqe_for_problem(
+        problem=problem,
+        dataset=dataset,
+        record=record,
+        basis=basis,
+        mapper=mapper,
+        optimizer=optimizer,
+        maxiter=maxiter,
+        seed=seed,
+    )
+
+
+def run_vqe_for_problem(
+    problem,
+    dataset: str,
+    record: str,
+    basis: str,
+    mapper: str = "parity",
+    optimizer: str = "slsqp",
+    maxiter: int = 200,
+    seed: int = 7,
+) -> dict[str, Any]:
+    np.random.seed(seed)
+
     mapper_obj, mapper_name = _make_mapper(mapper, problem=problem)
     qubit_op = mapper_obj.map(problem.hamiltonian.second_q_op())
     optimizer_obj, optimizer_name = _make_optimizer(optimizer, maxiter=maxiter)
