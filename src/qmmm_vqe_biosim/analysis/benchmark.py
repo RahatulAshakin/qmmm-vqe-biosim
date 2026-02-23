@@ -11,6 +11,7 @@ from qiskit_nature.second_q.algorithms import GroundStateEigensolver
 from qiskit_nature.second_q.mappers import ParityMapper
 from qiskit_nature.second_q.transformers import ActiveSpaceTransformer
 
+from qmmm_vqe_biosim.chem.active_space import choose_conservative_active_space
 from qmmm_vqe_biosim.chem.qiskit_nature_ground_state import build_electronic_structure_problem
 from qmmm_vqe_biosim.datasets.io import get_structure_record
 from qmmm_vqe_biosim.paths import ensure_project_dirs
@@ -33,17 +34,11 @@ def _default_out_dir(dataset: str, basis: str) -> Path:
     return out_dir
 
 
-def _build_problem(
-    geometry: dict[str, Any],
-    basis: str,
-    active_electrons: int | None,
-    active_orbitals: int | None,
+def _apply_active_space(
+    problem,
+    active_electrons: int | tuple[int, int],
+    active_orbitals: int,
 ):
-    problem = build_electronic_structure_problem(record=geometry, basis=basis)
-    if active_electrons is None and active_orbitals is None:
-        return problem
-    if active_electrons is None or active_orbitals is None:
-        raise ValueError("Provide both --active-electrons and --active-orbitals together.")
     transformer = ActiveSpaceTransformer(
         num_electrons=active_electrons,
         num_spatial_orbitals=active_orbitals,
@@ -78,21 +73,69 @@ def run_benchmark(
     records: list[str],
     seed: int = 7,
     maxiter: int = 200,
+    method: str = "vqe",
+    mm_charges_path: str | None = None,
+    backend: str = "local",
+    shots: int | None = None,
+    resilience_level: int | None = None,
+    optimization_level: int | None = None,
     dry_run: bool = False,
     max_qubits: int = 16,
     exact_max_qubits: int = 12,
+    auto_active_space: bool = False,
     active_electrons: int | None = None,
     active_orbitals: int | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    method_key = method.strip().lower()
+    if method_key not in {"vqe", "adapt_vqe"}:
+        raise ValueError(f"Unsupported method: {method}")
+    if (active_electrons is None) ^ (active_orbitals is None):
+        raise ValueError("Provide both --active-electrons and --active-orbitals together.")
+
     for record in records:
         geometry = get_structure_record(dataset=dataset, record_id=record)
-        problem = _build_problem(
-            geometry=geometry,
+        full_problem = build_electronic_structure_problem(
+            record=geometry,
             basis=basis,
-            active_electrons=active_electrons,
-            active_orbitals=active_orbitals,
+            mm_charges_path=mm_charges_path,
         )
+        full_num_qubits = _compute_num_qubits(full_problem)
+
+        chosen_active_electrons: int | tuple[int, int] | None = active_electrons
+        chosen_active_orbitals: int | None = active_orbitals
+        auto_active_applied = False
+
+        # Manual active-space settings always take precedence.
+        if chosen_active_electrons is not None and chosen_active_orbitals is not None:
+            problem = _apply_active_space(
+                problem=full_problem,
+                active_electrons=chosen_active_electrons,
+                active_orbitals=chosen_active_orbitals,
+            )
+        elif auto_active_space and full_num_qubits > max_qubits:
+            num_alpha, num_beta = full_problem.num_particles
+            (
+                active_num_alpha,
+                active_num_beta,
+                active_num_orbitals,
+            ) = choose_conservative_active_space(
+                num_spatial_orbitals=full_problem.num_spatial_orbitals,
+                num_alpha=num_alpha,
+                num_beta=num_beta,
+                max_qubits=max_qubits,
+            )
+            chosen_active_electrons = (active_num_alpha, active_num_beta)
+            chosen_active_orbitals = active_num_orbitals
+            auto_active_applied = True
+            problem = _apply_active_space(
+                problem=full_problem,
+                active_electrons=chosen_active_electrons,
+                active_orbitals=chosen_active_orbitals,
+            )
+        else:
+            problem = full_problem
+
         num_qubits = _compute_num_qubits(problem)
 
         exact_energy: float | None = None
@@ -121,6 +164,11 @@ def run_benchmark(
                 dataset=dataset,
                 record=record,
                 basis=basis,
+                method=method_key,
+                backend=backend,
+                shots=shots,
+                resilience_level=resilience_level,
+                optimization_level=optimization_level,
                 seed=seed,
                 maxiter=maxiter,
             )
@@ -135,6 +183,13 @@ def run_benchmark(
             "dataset": dataset,
             "record": record,
             "basis": basis,
+            "algorithm": method_key,
+            "mm_charges_path": mm_charges_path,
+            "backend": backend,
+            "shots": shots,
+            "resilience_level": resilience_level,
+            "optimization_level": optimization_level,
+            "full_num_qubits": full_num_qubits,
             "num_qubits": num_qubits,
             "charge": geometry.get("charge"),
             "multiplicity": geometry.get("multiplicity"),
@@ -161,8 +216,14 @@ def run_benchmark(
             "maxiter": maxiter,
             "max_qubits": max_qubits,
             "exact_max_qubits": exact_max_qubits,
-            "active_electrons": active_electrons,
-            "active_orbitals": active_orbitals,
+            "auto_active_space": auto_active_space,
+            "auto_active_space_applied": auto_active_applied,
+            "active_electrons": (
+                list(chosen_active_electrons)
+                if isinstance(chosen_active_electrons, tuple)
+                else chosen_active_electrons
+            ),
+            "active_orbitals": chosen_active_orbitals,
             "skipped_reason": skipped_reason,
         }
         rows.append(row)
@@ -219,6 +280,35 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7, help="Deterministic random seed")
     parser.add_argument("--maxiter", type=int, default=200, help="VQE max optimizer iterations")
     parser.add_argument(
+        "--mm-charges",
+        default=None,
+        help="Optional CSV with MM point charges columns x,y,z,q",
+    )
+    parser.add_argument(
+        "--method",
+        default="vqe",
+        choices=["vqe", "adapt_vqe"],
+        help="Algorithm for quantum solve: vqe or adapt_vqe",
+    )
+    parser.add_argument(
+        "--backend",
+        default="local",
+        help="Estimator backend: local (default) or ibm:<backend_name>",
+    )
+    parser.add_argument("--shots", type=int, default=None, help="Optional shot count")
+    parser.add_argument(
+        "--resilience-level",
+        type=int,
+        default=None,
+        help="Optional IBM Runtime resilience level",
+    )
+    parser.add_argument(
+        "--optimization-level",
+        type=int,
+        default=None,
+        help="Optional backend optimization level",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="Only compute metadata + qubit counts"
     )
     parser.add_argument(
@@ -232,6 +322,14 @@ def main() -> None:
         type=int,
         default=12,
         help="Skip exact solve when num_qubits exceeds this threshold",
+    )
+    parser.add_argument(
+        "--auto-active-space",
+        action="store_true",
+        help=(
+            "Automatically choose active_electrons/orbitals when full problem exceeds --max-qubits "
+            "and manual active-space values are not provided"
+        ),
     )
     parser.add_argument("--active-electrons", type=int, default=None, help="Active-space electrons")
     parser.add_argument("--active-orbitals", type=int, default=None, help="Active-space orbitals")
@@ -248,9 +346,16 @@ def main() -> None:
         records=records,
         seed=args.seed,
         maxiter=args.maxiter,
+        method=args.method,
+        mm_charges_path=args.mm_charges,
+        backend=args.backend,
+        shots=args.shots,
+        resilience_level=args.resilience_level,
+        optimization_level=args.optimization_level,
         dry_run=args.dry_run,
         max_qubits=args.max_qubits,
         exact_max_qubits=args.exact_max_qubits,
+        auto_active_space=args.auto_active_space,
         active_electrons=args.active_electrons,
         active_orbitals=args.active_orbitals,
     )

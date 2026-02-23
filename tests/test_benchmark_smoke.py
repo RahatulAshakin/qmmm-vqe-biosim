@@ -6,6 +6,7 @@ from pathlib import Path
 
 def test_benchmark_smoke(tmp_path: Path):
     out_dir = tmp_path / "benchmark_out"
+    max_qubits = 8
     cmd = [
         sys.executable,
         "-m",
@@ -17,6 +18,9 @@ def test_benchmark_smoke(tmp_path: Path):
         "--records",
         "CO2",
         "--dry-run",
+        "--auto-active-space",
+        "--max-qubits",
+        str(max_qubits),
         "--maxiter",
         "5",
         "--seed",
@@ -36,11 +40,15 @@ def test_benchmark_smoke(tmp_path: Path):
         "dataset",
         "record",
         "basis",
+        "full_num_qubits",
         "num_qubits",
         "exact_energy",
         "vqe_energy",
         "runtime_sec",
         "seed",
+        "active_electrons",
+        "active_orbitals",
+        "auto_active_space_applied",
         "skipped_reason",
     }
     assert required.issubset(row.keys())
@@ -49,4 +57,9 @@ def test_benchmark_smoke(tmp_path: Path):
     assert row["basis"] == "sto3g"
     assert isinstance(row["num_qubits"], int)
     assert row["num_qubits"] > 0
+    assert row["full_num_qubits"] > max_qubits
+    assert row["num_qubits"] <= max_qubits
+    assert row["auto_active_space_applied"] is True
+    assert row["active_electrons"] is not None
+    assert row["active_orbitals"] is not None
     assert row["skipped_reason"] == "dry_run"
