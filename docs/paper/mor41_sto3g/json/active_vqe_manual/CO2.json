@@ -12,7 +12,7 @@
   "exact_energy": -185.13928120411495,
   "exact_max_qubits": 12,
   "exact_method": "run",
-  "exact_runtime_sec": 1.6053399860000184,
+  "exact_runtime_sec": 1.6743633039995984,
   "full_num_qubits": 28,
   "max_qubits": 16,
   "maxiter": 200,
@@ -22,7 +22,7 @@
   "optimization_level": null,
   "record": "CO2",
   "resilience_level": null,
-  "runtime_sec": 9.36239611800002,
+  "runtime_sec": 9.646707695999794,
   "seed": 7,
   "shots": null,
   "skipped_reason": null,
@@ -31,5 +31,5 @@
   "vqe_mapper": "parity",
   "vqe_method": "run",
   "vqe_optimizer": "slsqp",
-  "vqe_runtime_sec": 7.757056132000002
+  "vqe_runtime_sec": 7.9723443920001955
 }
