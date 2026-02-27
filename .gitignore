@@ -25,3 +25,5 @@ results/
 *.egg-info/
 dist/
 build/
+
+*:Zone.Identifier
