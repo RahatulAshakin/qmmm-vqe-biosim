@@ -1,0 +1,5 @@
+dataset,record,basis,pattern,num_charges,charge_value,radius_angstrom,exact_energy_ha,vqe_energy_ha,delta_exact_energy_ha,delta_vqe_energy_ha,charges_csv
+mor41,H2,sto3g,shell,6,0.1,1.5,-1.5592302486425018,-1.5592302454449476,-0.421986866667722,-0.42198686352835835,docs/paper/mor41_sto3g/qmmm_scan/charges/shell_r1p50_n6.csv
+mor41,H2,sto3g,shell,6,0.1,2.0,-1.455055023493695,-1.455055022474813,-0.31781164151891517,-0.31781164055822386,docs/paper/mor41_sto3g/qmmm_scan/charges/shell_r2p00_n6.csv
+mor41,H2,sto3g,shell,6,0.1,2.5,-1.391499657191286,-1.3914996567592743,-0.2542562752165063,-0.2542562748426851,docs/paper/mor41_sto3g/qmmm_scan/charges/shell_r2p50_n6.csv
+mor41,H2,sto3g,shell,6,0.1,3.0,-1.3490675549663427,-1.3490675547322397,-0.21182417299156286,-0.21182417281565047,docs/paper/mor41_sto3g/qmmm_scan/charges/shell_r3p00_n6.csv

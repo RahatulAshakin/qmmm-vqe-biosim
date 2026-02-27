@@ -29,7 +29,13 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         default="local",
-        help="Estimator backend: local (default) or ibm:<backend_name>",
+        choices=["local", "ibm"],
+        help="Estimator backend: local (default) or ibm",
+    )
+    parser.add_argument(
+        "--ibm-backend",
+        default=None,
+        help="IBM Runtime backend name (required when --backend ibm)",
     )
     parser.add_argument("--shots", type=int, default=None, help="Optional shot count")
     parser.add_argument(
@@ -57,6 +63,7 @@ def main() -> None:
         method=args.method,
         mm_charges_path=args.mm_charges,
         backend=args.backend,
+        ibm_backend_name=args.ibm_backend,
         shots=args.shots,
         resilience_level=args.resilience_level,
         optimization_level=args.optimization_level,

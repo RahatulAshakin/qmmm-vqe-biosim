@@ -9,20 +9,42 @@ from typing import Any
 @dataclass
 class EstimatorHandle:
     estimator: Any
-    backend_label: str
+    backend_kind: str
+    ibm_backend_name: str | None
+    backend_obj: Any | None
     close: Callable[[], None]
 
 
-def parse_backend_spec(spec: str) -> tuple[str, str | None]:
-    key = spec.strip()
-    if key == "local":
-        return "local", None
+@dataclass(frozen=True)
+class BackendConfig:
+    backend: str
+    ibm_backend_name: str | None
+
+
+def build_backend_config(
+    backend: str = "local",
+    ibm_backend_name: str | None = None,
+) -> BackendConfig:
+    key = backend.strip().lower()
+    name = ibm_backend_name.strip() if ibm_backend_name is not None else None
+
+    # Backward-compat path for existing programmatic callers.
     if key.startswith("ibm:"):
-        name = key.split(":", 1)[1].strip()
-        if not name:
-            raise ValueError("Invalid backend spec: use ibm:<backend_name>")
-        return "ibm", name
-    raise ValueError("Unsupported backend spec. Use 'local' or 'ibm:<backend_name>'.")
+        parsed = key.split(":", 1)[1].strip()
+        if not parsed:
+            raise ValueError("Invalid backend spec: use --backend ibm --ibm-backend <name>")
+        if name is not None and name != parsed:
+            raise ValueError("Conflicting IBM backend names provided")
+        key = "ibm"
+        name = parsed
+
+    if key not in {"local", "ibm"}:
+        raise ValueError("Unsupported backend. Use 'local' or 'ibm'.")
+    if key == "ibm" and not name:
+        raise ValueError("IBM backend requested: provide --ibm-backend <backend_name>.")
+    if key == "local":
+        name = None
+    return BackendConfig(backend=key, ibm_backend_name=name)
 
 
 def _local_estimator(seed: int = 7) -> EstimatorHandle:
@@ -34,13 +56,25 @@ def _local_estimator(seed: int = 7) -> EstimatorHandle:
             warnings.simplefilter("ignore", category=DeprecationWarning)
             estimator = Estimator()
         if isinstance(estimator, BaseEstimatorV2):
-            return EstimatorHandle(estimator=estimator, backend_label="local", close=lambda: None)
+            return EstimatorHandle(
+                estimator=estimator,
+                backend_kind="local",
+                ibm_backend_name=None,
+                backend_obj=None,
+                close=lambda: None,
+            )
     except Exception:
         pass
 
     # Qiskit 1.x compatibility path.
     estimator = StatevectorEstimator(seed=seed)
-    return EstimatorHandle(estimator=estimator, backend_label="local", close=lambda: None)
+    return EstimatorHandle(
+        estimator=estimator,
+        backend_kind="local",
+        ibm_backend_name=None,
+        backend_obj=None,
+        close=lambda: None,
+    )
 
 
 def _ibm_estimator(
@@ -50,7 +84,7 @@ def _ibm_estimator(
     optimization_level: int | None,
 ) -> EstimatorHandle:
     try:
-        from qiskit_ibm_runtime import EstimatorV2, QiskitRuntimeService, Session
+        from qiskit_ibm_runtime import Estimator, QiskitRuntimeService
     except Exception as exc:
         raise RuntimeError(
             "IBM backend requested, but qiskit-ibm-runtime is unavailable. "
@@ -69,8 +103,8 @@ def _ibm_estimator(
     try:
         service = QiskitRuntimeService()
         backend = service.backend(backend_name)
-        session = Session(backend=backend)
-        estimator = EstimatorV2(mode=session, options=(options or None))
+        # Job mode (no explicit Session required)
+        estimator = Estimator(mode=backend, options=(options or None))
     except Exception as exc:
         raise RuntimeError(
             "IBM backend requested but IBM Runtime initialization failed. "
@@ -80,25 +114,28 @@ def _ibm_estimator(
 
     return EstimatorHandle(
         estimator=estimator,
-        backend_label=f"ibm:{backend_name}",
-        close=session.close,
+        backend_kind="ibm",
+        ibm_backend_name=backend_name,
+        backend_obj=backend,
+        close=lambda: None,
     )
 
 
 def get_estimator(
     backend: str = "local",
+    ibm_backend_name: str | None = None,
     *,
     seed: int = 7,
     shots: int | None = None,
     resilience_level: int | None = None,
     optimization_level: int | None = None,
 ) -> EstimatorHandle:
-    kind, name = parse_backend_spec(backend)
-    if kind == "local":
+    cfg = build_backend_config(backend=backend, ibm_backend_name=ibm_backend_name)
+    if cfg.backend == "local":
         return _local_estimator(seed=seed)
-    assert name is not None
+    assert cfg.ibm_backend_name is not None
     return _ibm_estimator(
-        backend_name=name,
+        backend_name=cfg.ibm_backend_name,
         shots=shots,
         resilience_level=resilience_level,
         optimization_level=optimization_level,

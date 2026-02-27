@@ -11,7 +11,7 @@ from qiskit_nature.second_q.algorithms import GroundStateEigensolver
 from qiskit_nature.second_q.mappers import ParityMapper
 from qiskit_nature.second_q.transformers import ActiveSpaceTransformer
 
-from qmmm_vqe_biosim.chem.active_space import choose_conservative_active_space
+from qmmm_vqe_biosim.chem.active_space import choose_auto_active_space
 from qmmm_vqe_biosim.chem.qiskit_nature_ground_state import build_electronic_structure_problem
 from qmmm_vqe_biosim.datasets.io import get_structure_record
 from qmmm_vqe_biosim.paths import ensure_project_dirs
@@ -37,12 +37,19 @@ def _default_out_dir(dataset: str, basis: str) -> Path:
 def _apply_active_space(
     problem,
     active_electrons: int | tuple[int, int],
-    active_orbitals: int,
+    active_orbitals: int | list[int],
 ):
-    transformer = ActiveSpaceTransformer(
-        num_electrons=active_electrons,
-        num_spatial_orbitals=active_orbitals,
-    )
+    if isinstance(active_orbitals, int):
+        transformer = ActiveSpaceTransformer(
+            num_electrons=active_electrons,
+            num_spatial_orbitals=active_orbitals,
+        )
+    else:
+        transformer = ActiveSpaceTransformer(
+            num_electrons=active_electrons,
+            num_spatial_orbitals=len(active_orbitals),
+            active_orbitals=active_orbitals,
+        )
     return transformer.transform(problem)
 
 
@@ -67,6 +74,23 @@ def _run_exact(
     return energy, runtime_sec, "run"
 
 
+def _parse_csv_list(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    values = [v.strip() for v in raw.split(",") if v.strip()]
+    return values or None
+
+
+def _parse_csv_ints(raw: str | None, *, one_based: bool = False) -> list[int] | None:
+    values = _parse_csv_list(raw)
+    if values is None:
+        return None
+    parsed = [int(v) for v in values]
+    if one_based:
+        parsed = [v - 1 for v in parsed]
+    return parsed
+
+
 def run_benchmark(
     dataset: str,
     basis: str,
@@ -76,6 +100,7 @@ def run_benchmark(
     method: str = "vqe",
     mm_charges_path: str | None = None,
     backend: str = "local",
+    ibm_backend_name: str | None = None,
     shots: int | None = None,
     resilience_level: int | None = None,
     optimization_level: int | None = None,
@@ -83,6 +108,12 @@ def run_benchmark(
     max_qubits: int = 16,
     exact_max_qubits: int = 12,
     auto_active_space: bool = False,
+    auto_active_space_method: str = "heuristic",
+    auto_active_space_max_orbitals: int | None = None,
+    auto_active_space_occ_min: float = 0.02,
+    auto_active_space_occ_max: float = 1.98,
+    auto_active_space_avas_ao_labels: list[str] | None = None,
+    auto_active_space_avas_atoms: list[int] | None = None,
     active_electrons: int | None = None,
     active_orbitals: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -92,6 +123,11 @@ def run_benchmark(
         raise ValueError(f"Unsupported method: {method}")
     if (active_electrons is None) ^ (active_orbitals is None):
         raise ValueError("Provide both --active-electrons and --active-orbitals together.")
+    auto_method_key = auto_active_space_method.strip().lower()
+    if auto_method_key not in {"heuristic", "uno_cas", "occ_entropy", "avas"}:
+        raise ValueError(f"Unsupported auto active-space method: {auto_active_space_method}")
+    if auto_active_space_occ_min > auto_active_space_occ_max:
+        raise ValueError("--auto-active-space-occ-min must be <= --auto-active-space-occ-max")
 
     for record in records:
         geometry = get_structure_record(dataset=dataset, record_id=record)
@@ -103,7 +139,11 @@ def run_benchmark(
         full_num_qubits = _compute_num_qubits(full_problem)
 
         chosen_active_electrons: int | tuple[int, int] | None = active_electrons
-        chosen_active_orbitals: int | None = active_orbitals
+        chosen_active_orbitals: int | list[int] | None = active_orbitals
+        auto_selected_orbitals: list[int] | None = None
+        auto_occupations: list[float] | None = None
+        auto_metadata: dict[str, Any] | None = None
+        resolved_auto_method = auto_method_key
         auto_active_applied = False
 
         # Manual active-space settings always take precedence.
@@ -114,20 +154,25 @@ def run_benchmark(
                 active_orbitals=chosen_active_orbitals,
             )
         elif auto_active_space and full_num_qubits > max_qubits:
-            num_alpha, num_beta = full_problem.num_particles
-            (
-                active_num_alpha,
-                active_num_beta,
-                active_num_orbitals,
-            ) = choose_conservative_active_space(
-                num_spatial_orbitals=full_problem.num_spatial_orbitals,
-                num_alpha=num_alpha,
-                num_beta=num_beta,
+            selection = choose_auto_active_space(
+                problem=full_problem,
+                record=geometry,
+                basis=basis,
                 max_qubits=max_qubits,
+                method=auto_method_key,
+                max_orbitals=auto_active_space_max_orbitals,
+                occ_min=auto_active_space_occ_min,
+                occ_max=auto_active_space_occ_max,
+                avas_ao_labels=auto_active_space_avas_ao_labels,
+                avas_atoms=auto_active_space_avas_atoms,
             )
-            chosen_active_electrons = (active_num_alpha, active_num_beta)
-            chosen_active_orbitals = active_num_orbitals
+            chosen_active_electrons = selection.active_electrons
+            chosen_active_orbitals = selection.active_orbitals
             auto_active_applied = True
+            resolved_auto_method = selection.method
+            auto_selected_orbitals = selection.selected_orbitals
+            auto_occupations = selection.occupations
+            auto_metadata = selection.metadata
             problem = _apply_active_space(
                 problem=full_problem,
                 active_electrons=chosen_active_electrons,
@@ -152,6 +197,10 @@ def run_benchmark(
         vqe_ansatz: str | None = None
         vqe_optimizer: str | None = None
         vqe_mapper: str | None = None
+        vqe_runtime_metadata: dict[str, Any] | None = None
+        resolved_backend = backend
+        resolved_ibm_backend_name = ibm_backend_name
+        algorithm = method_key
         skipped_reason: str | None = None
 
         if dry_run:
@@ -166,26 +215,35 @@ def run_benchmark(
                 basis=basis,
                 method=method_key,
                 backend=backend,
+                ibm_backend_name=ibm_backend_name,
                 shots=shots,
                 resilience_level=resilience_level,
                 optimization_level=optimization_level,
                 seed=seed,
                 maxiter=maxiter,
+                active_electrons=chosen_active_electrons,
+                active_orbitals=chosen_active_orbitals,
             )
             vqe_energy = float(vqe["energy"])
             vqe_runtime_sec = float(vqe["runtime_sec"])
             vqe_method = "run"
+            algorithm = str(vqe.get("algorithm", method_key))
             vqe_ansatz = str(vqe["ansatz"])
             vqe_optimizer = str(vqe["optimizer"])
             vqe_mapper = str(vqe["mapper"])
+            vqe_runtime_metadata = vqe.get("runtime_metadata")
+            resolved_backend = str(vqe.get("backend", backend))
+            maybe_ibm_name = vqe.get("ibm_backend_name")
+            resolved_ibm_backend_name = None if maybe_ibm_name is None else str(maybe_ibm_name)
 
         row = {
             "dataset": dataset,
             "record": record,
             "basis": basis,
-            "algorithm": method_key,
+            "algorithm": algorithm,
             "mm_charges_path": mm_charges_path,
-            "backend": backend,
+            "backend": resolved_backend,
+            "ibm_backend_name": resolved_ibm_backend_name,
             "shots": shots,
             "resilience_level": resilience_level,
             "optimization_level": optimization_level,
@@ -212,18 +270,30 @@ def run_benchmark(
             "vqe_ansatz": vqe_ansatz,
             "vqe_optimizer": vqe_optimizer,
             "vqe_mapper": vqe_mapper,
+            "vqe_runtime_metadata": vqe_runtime_metadata,
             "seed": seed,
             "maxiter": maxiter,
             "max_qubits": max_qubits,
             "exact_max_qubits": exact_max_qubits,
             "auto_active_space": auto_active_space,
+            "auto_active_space_method": resolved_auto_method,
+            "auto_active_space_max_orbitals": auto_active_space_max_orbitals,
+            "auto_active_space_occ_min": auto_active_space_occ_min,
+            "auto_active_space_occ_max": auto_active_space_occ_max,
             "auto_active_space_applied": auto_active_applied,
+            "auto_active_space_selected_orbitals": auto_selected_orbitals,
+            "auto_active_space_occupations": auto_occupations,
+            "auto_active_space_metadata": auto_metadata,
             "active_electrons": (
                 list(chosen_active_electrons)
                 if isinstance(chosen_active_electrons, tuple)
                 else chosen_active_electrons
             ),
-            "active_orbitals": chosen_active_orbitals,
+            "active_orbitals": (
+                list(chosen_active_orbitals)
+                if isinstance(chosen_active_orbitals, list)
+                else chosen_active_orbitals
+            ),
             "skipped_reason": skipped_reason,
         }
         rows.append(row)
@@ -293,7 +363,13 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         default="local",
-        help="Estimator backend: local (default) or ibm:<backend_name>",
+        choices=["local", "ibm"],
+        help="Estimator backend: local (default) or ibm",
+    )
+    parser.add_argument(
+        "--ibm-backend",
+        default=None,
+        help="IBM Runtime backend name (required when --backend ibm)",
     )
     parser.add_argument("--shots", type=int, default=None, help="Optional shot count")
     parser.add_argument(
@@ -331,6 +407,42 @@ def main() -> None:
             "and manual active-space values are not provided"
         ),
     )
+    parser.add_argument(
+        "--auto-active-space-method",
+        default="heuristic",
+        choices=["heuristic", "uno_cas", "occ_entropy", "avas"],
+        help="Method for automatic active-space selection",
+    )
+    parser.add_argument(
+        "--auto-active-space-max-orbitals",
+        type=int,
+        default=None,
+        help="Optional cap on selected active spatial orbitals",
+    )
+    parser.add_argument(
+        "--auto-active-space-occ-min",
+        type=float,
+        default=0.02,
+        help="Minimum spin-summed natural occupation for UNO-CAS",
+    )
+    parser.add_argument(
+        "--auto-active-space-occ-max",
+        "--occ-max",
+        dest="auto_active_space_occ_max",
+        type=float,
+        default=1.98,
+        help="Maximum spin-summed natural occupation for UNO-CAS",
+    )
+    parser.add_argument(
+        "--auto-active-space-avas-ao-labels",
+        default=None,
+        help="Comma-separated AVAS AO labels (e.g. '0 C 2p,1 O 2p')",
+    )
+    parser.add_argument(
+        "--auto-active-space-avas-atoms",
+        default=None,
+        help="Comma-separated 1-based atom indices for AVAS valence label generation",
+    )
     parser.add_argument("--active-electrons", type=int, default=None, help="Active-space electrons")
     parser.add_argument("--active-orbitals", type=int, default=None, help="Active-space orbitals")
     parser.add_argument("--force", action="store_true", help="Overwrite existing output file")
@@ -349,6 +461,7 @@ def main() -> None:
         method=args.method,
         mm_charges_path=args.mm_charges,
         backend=args.backend,
+        ibm_backend_name=args.ibm_backend,
         shots=args.shots,
         resilience_level=args.resilience_level,
         optimization_level=args.optimization_level,
@@ -356,6 +469,14 @@ def main() -> None:
         max_qubits=args.max_qubits,
         exact_max_qubits=args.exact_max_qubits,
         auto_active_space=args.auto_active_space,
+        auto_active_space_method=args.auto_active_space_method,
+        auto_active_space_max_orbitals=args.auto_active_space_max_orbitals,
+        auto_active_space_occ_min=args.auto_active_space_occ_min,
+        auto_active_space_occ_max=args.auto_active_space_occ_max,
+        auto_active_space_avas_ao_labels=_parse_csv_list(args.auto_active_space_avas_ao_labels),
+        auto_active_space_avas_atoms=_parse_csv_ints(
+            args.auto_active_space_avas_atoms, one_based=True
+        ),
         active_electrons=args.active_electrons,
         active_orbitals=args.active_orbitals,
     )

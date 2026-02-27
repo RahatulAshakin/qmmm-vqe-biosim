@@ -43,3 +43,25 @@ def load_mm_charges_csv(path: str | Path) -> tuple[list[list[float]], list[float
         raise ValueError(f"No MM charges rows found in {csv_path}")
 
     return coords, charges
+
+
+def write_mm_charges_csv(
+    path: str | Path,
+    coords_angstrom: list[list[float]] | tuple[tuple[float, float, float], ...],
+    charges: list[float] | tuple[float, ...],
+) -> Path:
+    out_path = Path(path)
+    if len(coords_angstrom) != len(charges):
+        raise ValueError("coords_angstrom and charges must have the same length")
+    if not coords_angstrom:
+        raise ValueError("At least one MM charge is required")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["x", "y", "z", "q"])
+        for xyz, q in zip(coords_angstrom, charges, strict=True):
+            if len(xyz) != 3:
+                raise ValueError("Each coordinate must have 3 values: x,y,z")
+            writer.writerow([float(xyz[0]), float(xyz[1]), float(xyz[2]), float(q)])
+    return out_path

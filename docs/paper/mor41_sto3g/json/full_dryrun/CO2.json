@@ -4,6 +4,13 @@
   "algorithm": "vqe",
   "auto_active_space": false,
   "auto_active_space_applied": false,
+  "auto_active_space_max_orbitals": null,
+  "auto_active_space_metadata": null,
+  "auto_active_space_method": "heuristic",
+  "auto_active_space_occ_max": 1.98,
+  "auto_active_space_occ_min": 0.02,
+  "auto_active_space_occupations": null,
+  "auto_active_space_selected_orbitals": null,
   "backend": "local",
   "basis": "sto3g",
   "charge": null,
@@ -14,6 +21,7 @@
   "exact_method": "skipped",
   "exact_runtime_sec": null,
   "full_num_qubits": 28,
+  "ibm_backend_name": null,
   "max_qubits": 16,
   "maxiter": 200,
   "mm_charges_path": null,
@@ -31,5 +39,6 @@
   "vqe_mapper": null,
   "vqe_method": "skipped",
   "vqe_optimizer": null,
+  "vqe_runtime_metadata": null,
   "vqe_runtime_sec": null
 }

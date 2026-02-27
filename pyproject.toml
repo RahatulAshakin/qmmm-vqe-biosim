@@ -30,6 +30,9 @@ target-version = ["py310"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "slow: marks slow tests that run only when explicitly enabled",
+]
 filterwarnings = [
   "ignore:The class .*NLocal.* is pending deprecation:PendingDeprecationWarning",
 ]

@@ -4,6 +4,13 @@
   "algorithm": "adapt_vqe",
   "auto_active_space": false,
   "auto_active_space_applied": false,
+  "auto_active_space_max_orbitals": null,
+  "auto_active_space_metadata": null,
+  "auto_active_space_method": "heuristic",
+  "auto_active_space_occ_max": 1.98,
+  "auto_active_space_occ_min": 0.02,
+  "auto_active_space_occupations": null,
+  "auto_active_space_selected_orbitals": null,
   "backend": "local",
   "basis": "sto3g",
   "charge": null,
@@ -12,7 +19,7 @@
   "exact_energy": -185.13928120411495,
   "exact_max_qubits": 12,
   "exact_method": "run",
-  "exact_runtime_sec": 1.7749664570001187,
+  "exact_runtime_sec": 1.6993457680000574,
   "full_num_qubits": 28,
   "ibm_backend_name": null,
   "max_qubits": 16,
@@ -23,7 +30,7 @@
   "optimization_level": null,
   "record": "CO2",
   "resilience_level": null,
-  "runtime_sec": 14.100653109999257,
+  "runtime_sec": 13.735650929997064,
   "seed": 7,
   "shots": null,
   "skipped_reason": null,
@@ -38,7 +45,7 @@
     "optimizer_result_nfev": 33,
     "optimizer_result_nit": 3,
     "optimizer_result_njev": 3,
-    "optimizer_time": 1.0382418632507324
+    "optimizer_time": 1.000922441482544
   },
-  "vqe_runtime_sec": 12.325686652999138
+  "vqe_runtime_sec": 12.036305161997007
 }
